@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive PID Tuning Guide | Vertiplane VTOL</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Chosen Palette: TechEagle Primary Colors (Orange, Black, White/Light Grey) -->
+    <!-- TechEagle Branding Adaptation:
+        - Primary Brand Orange: #FF671F (Dominant accent, main headings, active navigation, key buttons)
+        - Secondary Text/Background: #0F0F0F (Very dark grey/black for main text)
+        - Light Background/Neutral: #F2F2F2 (Very light grey for main background, cards)
+        - Accent Shades of Orange: #FF8952, #FFAC85, #FFE5D9 (for button hovers, subtle backgrounds, chart fills)
+        - Error/Warning: #D00000 (retained for symptom lines in charts for clear contrast)
+        - Font: Inter (Primary Typeface from Brand Guidelines)
+        - Overall: Clean, professional, modern, with strong visual hierarchy emphasizing the TechEagle orange.
+    -->
+    <!-- Application Structure Plan: The SPA is structured into five thematic, tab-navigated sections: Overview, VTOL Tuning, Fixed-Wing Tuning, Transition Tuning, and Troubleshooting. This task-oriented design was chosen over a linear document structure to allow pilots and engineers to quickly access the specific information they need for their current task. For example, a user struggling with hover stability can go directly to "VTOL Tuning," while someone trying to fix a specific problem can use the "Troubleshooting" guide. The interactive visualizations (charts showing good vs. bad behavior) and filters make abstract tuning concepts more concrete and actionable, enhancing usability and learning efficiency. -->
+    <!-- Visualization & Content Choices: 
+        - PID Concepts -> HTML Cards (Overview section): Goal=Inform. Provides clear, separated definitions. No complex interaction needed. Method=HTML/CSS.
+        - Drone Behavior (e.g., Oscillation) -> Chart.js Line Chart (Tuning sections): Goal=Compare (Bad vs. Good). This visually demonstrates the tuning objective, making it more intuitive than text alone. Interaction=Buttons select symptoms to update the chart and contextual info. Library=Chart.js (Canvas).
+        - Tuning Parameters -> Highlighted Text in Cards: Goal=Inform. Clearly calls out specific ArduPilot parameters like `ATC_RATE_R_P`. Method=HTML/CSS.
+        - Transition Process -> HTML/CSS Flow Diagram (Transition section): Goal=Organize. Visualizes the sequence of events and key parameters in a more digestible format than a list. Interaction=None, purely informational. Method=HTML/CSS with Tailwind Flexbox.
+        - Troubleshooting Guide -> Interactive HTML Table with JS Filter: Goal=Organize/Find. Allows users to rapidly find solutions to specific problems by filtering a large table. Interaction=Dropdown selection filters table rows. Method=HTML/JS.
+        - CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .chart-container { position: relative; width: 100%; max-width: 600px; margin-left: auto; margin-right: auto; height: 300px; max-height: 350px; }
+        @media (min-width: 768px) { .chart-container { height: 350px; } }
+        /* TechEagle Branding Styles based on PDF */
+        .nav-btn { transition: background-color 0.3s, color 0.3s; }
+        .nav-btn.active { background-color: #FF671F; color: #F2F2F2; } /* Primary Brand Orange */
+        .nav-btn:not(.active):hover { background-color: #FFAC85; color: #0F0F0F; } /* Lighter Orange Hover */
+        .symptom-btn { transition: background-color 0.3s, color 0.3s, transform 0.2s; }
+        .symptom-btn.active { background-color: #FF671F; color: #F2F2F2; transform: translateY(-2px); box-shadow: 0 4px 6px -1px rgb(255 103 31 / 0.3), 0 2px 4px -2px rgb(255 103 31 / 0.2); } /* Primary Brand Orange */
+        .symptom-btn:not(.active):hover { background-color: #FFAC85; } /* Lighter Orange Hover */
+        .brand-text-primary { color: #FF671F; } /* Primary Brand Orange for text */
+        .brand-text-secondary { color: #0F0F0F; } /* Black for main text */
+        .brand-bg-light { background-color: #F2F2F2; } /* Light Grey for backgrounds */
+        .brand-bg-highlight { background-color: #FFE5D9; } /* Very light orange for highlights */
+        .brand-border-primary { border-color: #FF671F; } /* Primary Brand Orange for borders */
+        .brand-code-bg { background-color: #FFAC85; } /* Medium orange for code snippets */
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-800">
+
+    <div class="container mx-auto p-4 md:p-8">
+        
+        <header class="text-center mb-8">
+            <h1 class="text-4xl md:text-5xl font-bold brand-text-primary">Interactive PID Tuning Guide</h1>
+            <p class="text-lg text-gray-600 mt-2">For the Vertiplane Hybrid VTOL Drone</p>
+        </header>
+
+        <nav class="flex flex-wrap justify-center gap-2 md:gap-4 mb-8 sticky top-2 bg-gray-50/80 backdrop-blur-sm py-3 z-10">
+            <button class="nav-btn font-semibold py-2 px-4 rounded-full border border-gray-300 active" data-target="overview">Overview</button>
+            <button class="nav-btn font-semibold py-2 px-4 rounded-full border border-gray-300" data-target="vtol">VTOL Tuning</button>
+            <button class="nav-btn font-semibold py-2 px-4 rounded-full border border-gray-300" data-target="fixedwing">Fixed-Wing Tuning</button>
+            <button class="nav-btn font-semibold py-2 px-4 rounded-full border border-gray-300" data-target="transition">Transition Tuning</button>
+            <button class="nav-btn font-semibold py-2 px-4 rounded-full border border-gray-300" data-target="troubleshooting">Troubleshooting</button>
+        </nav>
+
+        <main>
+            <!-- Overview Section -->
+            <section id="overview" class="content-section">
+                <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+                    <h2 class="text-2xl font-bold brand-text-primary mb-4">What is PID Tuning?</h2>
+                    <p class="text-gray-700 mb-4">PID (Proportional-Integral-Derivative) tuning is the meticulous process of optimizing the control loop parameters within your Vertiplane's Flight Controller (FC). These parameters dictate how the drone reacts to errors and maintains its desired attitude and position. Proper tuning is paramount for achieving stable, responsive, and efficient flight across all operational modes.</p>
+                    <h3 class="text-xl font-bold brand-text-secondary mb-3">Why is PID Tuning Crucial?</h3>
+                    <ul class="list-disc list-inside text-gray-700 space-y-1">
+                        <li><strong class="font-semibold">Enhanced Stability:</strong> Eliminates unwanted oscillations, wobbles, and uncontrolled movements, ensuring a smooth flight experience.</li>
+                        <li><strong class="font-semibold">Precise Responsiveness:</strong> Guarantees the drone reacts accurately and predictably to pilot commands, allowing for precise maneuvers and control.</li>
+                        <li><strong class="font-semibold">Optimized Efficiency:</strong> Prevents motors from overworking due to constant over-corrections, leading to extended flight times and cooler component temperatures.</li>
+                        <li><strong class="font-semibold">Increased Safety:</strong> A well-tuned drone is inherently more predictable and less prone to unexpected behavior, significantly reducing the risk of crashes and ensuring safer operations.</li>
+                    </ul>
+                    <h3 class="text-xl font-bold brand-text-secondary mt-6 mb-3">Core Principles of PID Tuning:</h3>
+                    <ul class="list-disc list-inside text-gray-700 space-y-1">
+                        <li><strong class="font-semibold">Iterative Process:</strong> Tuning is a continuous cycle of **Change Parameter → Fly → Observe Behavior → Analyze Logs → Refine → Repeat**. Patience is key.</li>
+                        <li><strong class="font-semibold">One Parameter at a Time:</strong> To accurately understand the impact of each adjustment, change only one PID value (or a related set like Roll P and Pitch P) at a time. Changing multiple simultaneously makes troubleshooting impossible.</li>
+                        <li><strong class="font-semibold">Small Increments:</strong> Adjust values in very small steps (e.g., 0.005, 0.01, 0.02). Large changes can quickly render the drone uncontrollable or lead to severe oscillations.</li>
+                        <li><strong class="font-semibold">Safety First:</strong> Always prioritize safety. Conduct tests in a large, clear, unpopulated area. Always have a safety observer. Be prepared to disarm the drone or switch to a basic "Stabilize" mode if it becomes uncontrollable.</li>
+                        <li><strong class="font-semibold">Logging is Key:</strong> Always record and analyze flight logs. They provide objective, quantitative data (sensor readings, motor outputs, error rates) that visual observations alone cannot.</li>
+                    </ul>
+                </div>
+                <div class="grid md:grid-cols-3 gap-6">
+                    <div class="bg-white rounded-lg shadow-md p-6">
+                        <h3 class="text-xl font-bold brand-text-primary mb-2">P (Proportional) Gain</h3>
+                        <p class="text-gray-600 mb-4">The P-gain responds directly to the <strong class="font-semibold">current error</strong> – how far the drone is from its commanded attitude or position. It provides an immediate, proportional correction, acting as the primary driver of responsiveness and stiffness.</p>
+                        <div class="space-y-2">
+                            <p><strong class="text-red-600">Too High:</strong> The drone will overcorrect aggressively, leading to rapid, high-frequency oscillations (a distinct shaky or twitchy appearance). Motors may become excessively hot due to constant rapid changes.</p>
+                            <p><strong class="text-blue-600">Too Low:</strong> The drone will feel sluggish, "mushy," and slow to respond to commands. It might drift significantly without quickly returning to its desired attitude, feeling unresponsive.</p>
+                        </div>
+                    </div>
+                    <div class="bg-white rounded-lg shadow-md p-6">
+                        <h3 class="text-xl font-bold brand-text-primary mb-2">I (Integral) Gain</h3>
+                        <p class="text-gray-600 mb-4">The I-gain addresses <strong class="font-semibold">accumulated errors over time</strong>. It's designed to correct for persistent, long-term drift or steady-state errors that the P-gain alone might not fully resolve (e.g., slight imbalances, consistent wind pressure).</p>
+                        <div class="space-y-2">
+                            <p><strong class="text-red-600">Too High:</strong> Can cause slow, wide oscillations or a "pumping" motion (drone slowly rocking or bobbing over several seconds). This can also lead to gradual motor overheating over longer flights as the integral term builds up.</p>
+                            <p><strong class="text-blue-600">Too Low:</strong> The drone may drift persistently, especially in windy conditions, even after initial P-corrections. It struggles to maintain a perfectly stable attitude or position over time.</p>
+                        </div>
+                    </div>
+                    <div class="bg-white rounded-lg shadow-md p-6">
+                        <h3 class="text-xl font-bold brand-text-primary mb-2">D (Derivative) Gain</h3>
+                        <p class="text-gray-600 mb-4">The D-gain acts as a <strong class="font-semibold">damper</strong> or "brake." It responds to the *rate of change of the error*, anticipating future errors and applying a counter-force to prevent overshoot and smooth out the P-response. It is crucial for dampening oscillations and improving "crispness."</p>
+                        <div class="space-y-2">
+                            <p><strong class="text-red-600">Too High:</strong> Can cause motor twitching, a distinct high-frequency "buzzing" sound, and rapid overheating, as it tries to over-dampen every tiny movement. The drone may feel "sticky" or overly stiff.</p>
+                            <p><strong class="text-blue-600">Too Low:</strong> The drone might "bounce" or "overshoot" its target angle after a rapid correction, leading to jerky flight. This also significantly worsens "prop wash" effects during descents.</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- VTOL Tuning Section -->
+            <section id="vtol" class="content-section hidden">
+                <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+                    <h2 class="text-2xl font-bold brand-text-primary mb-4">Phase 1: VTOL (Hover) Tuning</h2>
+                    <p class="text-gray-700 mb-4">This phase focuses on achieving a smooth, stable, and responsive hover, which is critical for your Vertiplane's vertical take-off and landing capabilities. Perform tests in a large, clear area at low altitude (1-2m) with minimal wind. Always tune with your typical operational payload attached.</p>
+                    <h3 class="text-xl font-bold brand-text-secondary mb-3">VTOL Tuning Workflow:</h3>
+                    <ol class="list-decimal list-inside text-gray-700 mb-4 space-y-1">
+                        <li>Ensure all pre-flight checks and sensor calibrations (Phase 1 of testing SOP) are complete.</li>
+                        <li>Start with default or manufacturer-recommended PID values.</li>
+                        <li>Focus on **Roll and Pitch Rate P-gains** first.</li>
+                        <li>Once P-gains are reasonable, tune **Roll and Pitch Rate D-gains**.</li>
+                        <li>Finally, tune **Roll and Pitch Rate I-gains**.</li>
+                        <li>Repeat for **Yaw Rate P, I, D-gains**.</li>
+                        <li>Make **one small adjustment at a time**, fly, observe, analyze logs, and repeat.</li>
+                    </ol>
+                    <p class="text-gray-700">Click on a symptom below to see the visual effect on flight behavior and detailed tuning recommendations for ArduPilot parameters.</p>
+                </div>
+                <div class="text-center mb-6 flex flex-wrap justify-center gap-3" id="vtol-symptom-buttons">
+                    <button class="symptom-btn font-medium py-2 px-4 rounded-lg bg-gray-200 border border-gray-300" data-symptom="oscillation">High-Frequency Oscillation</button>
+                    <button class="symptom-btn font-medium py-2 px-4 rounded-lg bg-gray-200 border border-gray-300" data-symptom="sluggish">Sluggish Response</button>
+                    <button class="symptom-btn font-medium py-2 px-4 rounded-lg bg-gray-200 border border-gray-300" data-symptom="drift">Persistent Drift</button>
+                    <button class="symptom-btn font-medium py-2 px-4 rounded-lg bg-gray-200 border border-gray-300" data-symptom="propwash">Prop Wash Wobble</button>
+                </div>
+                <div class="grid lg:grid-cols-2 gap-6 items-center">
+                    <div class="chart-container">
+                        <canvas id="vtolChart"></canvas>
+                    </div>
+                    <div id="vtol-info" class="bg-white rounded-lg shadow-md p-6">
+                         <h3 class="text-xl font-bold brand-text-primary mb-3">Select a Symptom</h3>
+                        <p class="text-gray-600">Choose a symptom from the buttons above to visualize the issue and see tuning recommendations.</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Fixed-Wing Tuning Section -->
+            <section id="fixedwing" class="content-section hidden">
+                 <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+                    <h2 class="text-2xl font-bold brand-text-primary mb-4">Phase 2: Fixed-Wing (Cruise) Tuning</h2>
+                    <p class="text-gray-700 mb-4">This phase focuses on achieving stable and efficient forward flight, leveraging the Vertiplane's fixed-wing capabilities. Perform tests at a safe, high altitude (e.g., >100m AGL) in "FBWA" (Fly By Wire A) mode, ensuring ample space for maneuvers.</p>
+                    <h3 class="text-xl font-bold brand-text-secondary mb-3">Fixed-Wing Tuning Workflow:</h3>
+                    <ol class="list-decimal list-inside text-gray-700 mb-4 space-y-1">
+                        <li>Ensure VTOL tuning is complete and the drone transitions smoothly.</li>
+                        <li>Start with default fixed-wing parameters or recommended values for your airframe.</li>
+                        <li>Focus on **Roll and Pitch P-gains** (`RLL_P`, `PTCH_P`) first for basic responsiveness.</li>
+                        <li>Then, tune **Roll and Pitch D-gains** (`RLL_D`, `PTCH_D`) to dampen oscillations.</li>
+                        <li>Finally, adjust **Roll and Pitch I-gains** (`RLL_I`, `PTCH_I`) for long-term attitude hold.</li>
+                        <li>Tune **Yaw P, I, D-gains** (`YAW_P`, `YAW_I`, `YAW_D`) for heading control.</li>
+                        <li>Consider **Airspeed to Throttle Gain** (`ARSP_FW_P`) for efficient airspeed control.</li>
+                    </ol>
+                    <p class="text-gray-700">Click on a symptom below to see how it affects fixed-wing flight and receive specific tuning advice for ArduPilot parameters.</p>
+                </div>
+                <div class="text-center mb-6 flex flex-wrap justify-center gap-3" id="fw-symptom-buttons">
+                    <button class="symptom-btn font-medium py-2 px-4 rounded-lg bg-gray-200 border border-gray-300" data-symptom="wingrock">Wing Rock / Porpoising</button>
+                    <button class="symptom-btn font-medium py-2 px-4 rounded-lg bg-gray-200 border border-gray-300" data-symptom="fw-sluggish">Sluggish Attitude</button>
+                    <button class="symptom-btn font-medium py-2 px-4 rounded-lg bg-gray-200 border border-gray-300" data-symptom="overshoot">Overshoot & Jerkiness</button>
+                </div>
+                 <div class="grid lg:grid-cols-2 gap-6 items-center">
+                    <div class="chart-container">
+                        <canvas id="fwChart"></canvas>
+                    </div>
+                    <div id="fw-info" class="bg-white rounded-lg shadow-md p-6">
+                        <h3 class="text-xl font-bold brand-text-primary mb-3">Select a Symptom</h3>
+                        <p class="text-gray-600">Choose a symptom from the buttons above to visualize the issue and see tuning recommendations.</p>
+                    </div>
+                </div>
+            </section>
+            
+            <!-- Transition Tuning Section -->
+            <section id="transition" class="content-section hidden">
+                <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+                    <h2 class="text-2xl font-bold brand-text-primary mb-4">Phase 3: Transition Tuning</h2>
+                    <p class="text-gray-700 mb-4">Optimizing transitions is paramount for a hybrid VTOL like the Vertiplane. This phase focuses on achieving seamless and reliable transitions between VTOL and Fixed-Wing modes. These are often controlled by specific behavior parameters rather than traditional PIDs, managing the complex interplay of vertical and horizontal thrust. Perform these tests at a safe transition altitude (e.g., 50-100m AGL) with ample clear airspace.</p>
+                    <h3 class="text-xl font-bold brand-text-secondary mb-3">Key Transition Parameters (ArduPilot Quadplane):</h3>
+                    <ul class="list-disc list-inside text-gray-700 mb-4 space-y-1">
+                        <li><code class="bg-gray-200 brand-text-primary font-mono p-1 rounded">Q_TRANSITION_MS</code>: Time in milliseconds for the transition to complete. A longer time means a slower, potentially smoother transition.</li>
+                        <li><code class="bg-gray-200 brand-text-primary font-mono p-1 rounded">Q_TRANSITION_ALT</code>: The altitude (AGL) at which an automatic transition will occur. Crucial for safety and obstacle clearance.</li>
+                        <li><code class="bg-gray-200 brand-text-primary font-mono p-1 rounded">Q_ASSIST_SPEED</code>: Airspeed at which multirotor motors will assist fixed-wing flight. Below this speed, VTOL motors provide more lift/thrust.</li>
+                        <li><code class="bg-gray-200 brand-text-primary font-mono p-1 rounded">Q_TILT_RATE_DN</code> (for Tilt-Rotors): Rate at which tilt-rotors/wings tilt *down* (forward) during VTOL to Fixed-Wing transition.</li>
+                        <li><code class="bg-gray-200 brand-text-primary font-mono p-1 rounded">Q_TILT_RATE_UP</code> (for Tilt-Rotors): Rate at which tilt-rotors/wings tilt *up* (vertical) during Fixed-Wing to VTOL transition.</li>
+                        <li><code class="bg-gray-200 brand-text-primary font-mono p-1 rounded">Q_VFWD_GAIN</code>: Forward velocity gain in VTOL mode, influencing how smoothly the drone accelerates into the transition.</li>
+                    </ul>
+                </div>
+                <div class="grid md:grid-cols-2 gap-8">
+                    <div>
+                        <h3 class="text-xl font-bold text-center brand-text-primary mb-4">VTOL <span class="text-gray-500 font-normal">to</span> Fixed-Wing Transition</h3>
+                        <p class="text-gray-700 mb-4 text-center">This flow illustrates the common symptoms and tuning actions for the forward transition.</p>
+                        <div class="space-y-4">
+                            <div class="bg-white p-4 rounded-lg shadow">
+                                <h4 class="font-semibold">Symptom: Jerky/Abrupt Pitch</h4>
+                                <p class="text-sm text-gray-600">The drone pitches forward too aggressively or suddenly during the transition, causing a jolt.</p>
+                                <p class="mt-2 text-sm"><strong>Action:</strong> Reduce <code class="brand-code-bg brand-text-primary font-mono p-1 rounded">Q_TILT_RATE_DN</code> (for tilt-rotors) to slow down the tilting speed, making the transition smoother. Consider increasing <code class="brand-code-bg brand-text-primary font-mono p-1 rounded">Q_TRANSITION_MS</code> for a longer, more gradual transition.</p>
+                            </div>
+                             <div class="text-center text-2xl text-gray-400">↓</div>
+                            <div class="bg-white p-4 rounded-lg shadow">
+                                <h4 class="font-semibold">Symptom: Struggles to Gain Speed</h4>
+                                <p class="text-sm text-gray-600">The drone is slow to accelerate or doesn't reach sufficient airspeed before fixed-wing lift takes over, potentially leading to a stall risk.</p>
+                                <p class="mt-2 text-sm"><strong>Action:</strong> Increase <code class="brand-code-bg brand-text-primary font-mono p-1 rounded">ARSP_FW_P</code> (airspeed to throttle gain) to make the forward motor more aggressive. Also, ensure <code class="brand-code-bg brand-text-primary font-mono p-1 rounded">Q_VFWD_GAIN</code> is appropriate for a smooth initial acceleration.</p>
+                            </div>
+                             <div class="text-center text-2xl text-gray-400">↓</div>
+                            <div class="bg-white p-4 rounded-lg shadow">
+                                <h4 class="font-semibold">Symptom: Altitude Loss/Gain</h4>
+                                <p class="text-sm text-gray-600">The drone dips significantly or climbs excessively during the transition phase, deviating from a level flight path.</p>
+                                <p class="mt-2 text-sm"><strong>Action:</strong> Adjust <code class="brand-code-bg brand-text-primary font-mono p-1 rounded">Q_TRANSITION_MS</code> to allow more time for lift transfer. Ensure <code class="brand-code-bg brand-text-primary font-mono p-1 rounded">Q_ASSIST_SPEED</code> is set correctly so VTOL motors assist appropriately until full fixed-wing lift is achieved.</p>
+                            </div>
+                        </div>
+                    </div>
+                     <div>
+                        <h3 class="text-xl font-bold text-center brand-text-primary mb-4">Fixed-Wing <span class="text-gray-500 font-normal">to</span> VTOL Transition</h3>
+                        <p class="text-gray-700 mb-4 text-center">This flow illustrates the common symptoms and tuning actions for the backward transition.</p>
+                        <div class="space-y-4">
+                            <div class="bg-white p-4 rounded-lg shadow">
+                                <h4 class="font-semibold">Symptom: Sudden Drop / Hard Landing</h4>
+                                <p class="text-sm text-gray-600">The drone experiences a sudden loss of altitude or a hard impact when transitioning back to VTOL mode, often due to vertical motors spooling up too slowly.</p>
+                                <p class="mt-2 text-sm"><strong>Action:</strong> Increase <code class="brand-code-bg brand-text-primary font-mono p-1 rounded">Q_TILT_RATE_UP</code> (for tilt-rotors) to speed up the tilt for vertical thrust. Verify that the vertical motors are configured to spool up quickly and that their minimum idle speed is sufficient.</p>
+                            </div>
+                             <div class="text-center text-2xl text-gray-400">↓</div>
+                            <div class="bg-white p-4 rounded-lg shadow">
+                                <h4 class="font-semibold">Symptom: Overshoots Landing Zone</h4>
+                                <p class="text-sm text-gray-600">The drone decelerates too slowly, flying past the intended landing point before establishing a stable hover.</p>
+                                <p class="mt-2 text-sm"><strong>Action:</strong> Adjust back transition deceleration parameters. This might involve reducing the minimum airspeed before full VTOL motor engagement or increasing the braking authority in the FC's back transition logic. Ensure your approach path allows for sufficient deceleration distance.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Troubleshooting Section -->
+            <section id="troubleshooting" class="content-section hidden">
+                <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+                    <h2 class="text-2xl font-bold brand-text-primary mb-4">Troubleshooting Guide</h2>
+                    <p class="text-gray-700 mb-4">This table provides a quick reference for common tuning issues you might encounter with your Vertiplane. Use the filter to narrow down the issues.</p>
+                     <div>
+                        <label for="issue-filter" class="block text-sm font-medium text-gray-700">Filter by Issue:</label>
+                        <select id="issue-filter" class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-brand-text-primary focus:border-brand-text-primary sm:text-sm rounded-md">
+                            <option value="all">Show All Issues</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full bg-white divide-y divide-gray-200 rounded-lg shadow">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Issue</th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Possible Cause(s)</th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Corrective Action(s)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="troubleshooting-table" class="divide-y divide-gray-200">
+                            <!-- Rows will be injected by JavaScript -->
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script>
+        const navButtons = document.querySelectorAll('.nav-btn');
+        const contentSections = document.querySelectorAll('.content-section');
+        const vtolSymptomButtons = document.querySelectorAll('#vtol-symptom-buttons .symptom-btn');
+        const fwSymptomButtons = document.querySelectorAll('#fw-symptom-buttons .symptom-btn');
+        const vtolInfo = document.getElementById('vtol-info');
+        const fwInfo = document.getElementById('fw-info');
+        let vtolChartInstance = null;
+        let fwChartInstance = null;
+
+        const troubleshootingData = [
+            { issue: 'Rapid Oscillations/Shaking (VTOL)', cause: 'P-gain too high. D-gain too high. Excessive vibrations.', action: 'Reduce `ATC_RATE_R/P/Y_P` in small steps. If still oscillating, reduce `ATC_RATE_R/P/Y_D`. Check prop balance and motor health.' },
+            { issue: 'Sluggish/Mushy Response (VTOL)', cause: 'P-gain too low. Incorrect center of gravity.', action: 'Increase `ATC_RATE_R/P/Y_P` in small increments. Verify drone is properly balanced (CG).' },
+            { issue: 'Slow, Wide Oscillations/Pumping (VTOL)', cause: 'I-gain too high. External interference.', action: 'Reduce `ATC_RATE_R/P/Y_I`. Ensure no strong magnetic fields or radio interference nearby.' },
+            { issue: 'Persistent Drift (VTOL)', cause: 'I-gain too low. Uneven weight distribution. Compass calibration issues.', action: 'Increase `ATC_RATE_R/P/Y_I`. Re-check drone balance. Perform compass calibration outdoors, away from metal.' },
+            { issue: 'Motors Hot/Buzzing', cause: 'D-gain too high. Excessive vibrations. Motor/ESC issues. Propeller damage.', action: 'Reduce `ATC_RATE_R/P/Y_D`. Check prop balance, motor bearings, FC soft-mounting. Inspect props for damage.' },
+            { issue: 'Prop Wash Wobble (VTOL descent)', cause: 'D-gain too low. Propeller inefficiency. Insufficient motor authority.', action: 'Increase `ATC_RATE_R/P_D` slightly. Consider different propellers (lower pitch). Ensure ESCs are calibrated.' },
+            { issue: 'Fixed-Wing Wing Rock/Porpoising', cause: '`RLL_P` or `PTCH_P` too high. Aerodynamic instability.', action: 'Reduce `RLL_P` or `PTCH_P` in small increments. Check wing/tail alignment.' },
+            { issue: 'Fixed-Wing Sluggish Response', cause: '`RLL_P` or `PTCH_P` too low. Control surface binding.', action: 'Increase `RLL_P` or `PTCH_P`. Check all control linkages for free movement.' },
+            { issue: 'Overshoot & Jerkiness (Fixed-Wing)', cause: 'Fixed-Wing D-gain (`RLL_D` or `PTCH_D`) too low.', action: 'Increase `RLL_D` or `PTCH_D` slightly to dampen corrections.' },
+            { issue: 'Unstable Transitions', cause: 'Transition parameters (`Q_TILT_RATE`, `Q_ASSIST_SPEED`, `Q_TRANSITION_MS`) incorrect. Airspeed sensor issues.', action: 'Adjust transition-specific parameters. Ensure airspeed sensor is accurate. Verify fixed-wing PIDs are stable.' },
+            { issue: 'Drone Stalls in Fixed-Wing', cause: 'Airspeed sensor issue. Flying below stall speed. Insufficient forward thrust.', action: 'Check airspeed sensor calibration. Ensure drone maintains speed above stall. Increase forward motor power if needed.' },
+            { issue: 'Altitude Hold Inaccuracy (VTOL)', cause: 'Barometer issues. Z-axis PIDs (`ATC_ACCEL_Z_P`) incorrect. Prop wash during descent.', action: 'Ensure barometer is shielded from prop wash/light. Adjust `ATC_ACCEL_Z_P/I/D`. Tune D-gain for prop wash.' }
+        ];
+
+        const chartConfigOptions = {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: { display: false },
+                x: { display: false }
+            },
+            plugins: {
+                legend: { position: 'bottom' },
+                tooltip: {
+                    callbacks: {
+                        title: function(tooltipItems) {
+                            const item = tooltipItems[0];
+                            let label = item.chart.data.labels[item.dataIndex];
+                            if (Array.isArray(label)) {
+                              return label.join(' ');
+                            } else {
+                              return label;
+                            }
+                        }
+                    }
+                }
+            },
+            elements: {
+                line: { tension: 0.4 },
+                point: { radius: 0 }
+            }
+        };
+
+        const chartData = {
+            labels: Array.from({ length: 50 }, (_, i) => `T${i}`),
+            good: Array.from({ length: 50 }, (_, i) => Math.sin(i / 5) * 5 + 5),
+            oscillation: Array.from({ length: 50 }, (_, i) => Math.sin(i / 5) * 5 + 5 + (Math.random() - 0.5) * 4),
+            sluggish: Array.from({ length: 50 }, (_, i) => Math.sin(i / 15) * 5 + 5),
+            drift: Array.from({ length: 50 }, (_, i) => Math.sin(i / 5) * 5 + 5 + i * 0.1),
+            propwash: Array.from({ length: 50 }, (_, i) => Math.sin(i / 5) * 5 + 5 + Math.sin(i*2) * 2),
+            wingrock: Array.from({ length: 50 }, (_, i) => Math.sin(i / 2) * 3 + 5),
+            fw_sluggish: Array.from({ length: 50 }, (_, i) => Math.sin(i / 20) * 5 + 5),
+            overshoot: Array.from({ length: 50 }, (_, i) => { let v = Math.sin(i/5)*5+5; return i%10 < 2 ? v + 3 : v; } )
+        };
+
+        const vtolSymptomData = {
+            'oscillation': { 
+                title: 'High-Frequency Oscillation', 
+                desc: 'The drone shakes rapidly, like a constant vibration, even in calm air. This is a classic sign of over-correction by the flight controller trying to correct errors too aggressively.', 
+                cause: 'P-gain is too high, causing overshooting and rapid corrections. D-gain might also be too high, introducing noise.', 
+                action: 'Systematically reduce <code class="brand-code-bg brand-text-primary font-mono p-1 rounded">ATC_RATE_R_P</code> and <code class="brand-code-bg brand-text-primary font-mono p-1 rounded">ATC_RATE_P_P</code> in very small increments (0.005-0.01). If oscillations persist, consider slightly reducing <code class="brand-code-bg brand-text-primary font-mono p-1 rounded">ATC_RATE_R_D</code> and <code class="brand-code-bg brand-text-primary font-mono p-1 rounded">ATC_RATE_P_D</code>. Also, check for mechanical vibrations (unbalanced props, loose motors).' , 
+                data: chartData.oscillation 
+            },
+            'sluggish': { 
+                title: 'Sluggish Response', 
+                desc: 'The drone feels "mushy" and slow to react to stick commands. It struggles to quickly return to a level attitude after an input, feeling unresponsive and heavy.', 
+                cause: 'P-gain is too low, meaning the drone is not applying enough corrective force for a given error. This can also be exacerbated by an incorrect Center of Gravity (CG).', 
+                action: 'Increase <code class="brand-code-bg brand-text-primary font-mono p-1 rounded">ATC_RATE_R_P</code> and <code class="brand-code-bg brand-text-primary font-mono p-1 rounded">ATC_RATE_P_P</code> in small increments (0.005-0.01). Ensure your drone\'s CG is correctly balanced as per manufacturer specifications.', 
+                data: chartData.sluggish 
+            },
+            'drift': { 
+                title: 'Persistent Drift', 
+                desc: 'Even in calm conditions and with centered sticks, the drone slowly drifts or rotates in one direction over time, failing to hold its commanded attitude or position perfectly.', 
+                cause: 'I-gain is too low, preventing the flight controller from correcting long-term, accumulated errors. This can also be caused by slight imbalances or external magnetic interference affecting the compass.', 
+                action: 'Increase <code class="brand-code-bg brand-text-primary font-mono p-1 rounded">ATC_RATE_R_I</code> and <code class="brand-code-bg brand-text-primary font-mono p-1 rounded">ATC_RATE_P_I</code> to help the drone fight long-term errors and hold its position more firmly. Re-check drone balance and perform a compass calibration outdoors, away from metal objects.', 
+                data: chartData.drift 
+            },
+            'propwash': { 
+                title: 'Prop Wash Wobble', 
+                desc: 'When descending vertically or performing rapid maneuvers, the drone wobbles or shakes as its propellers encounter their own turbulent air. This is particularly noticeable during quick altitude drops.', 
+                cause: 'D-gain is too low to effectively dampen the rapid oscillations caused by turbulent airflow. Propeller inefficiency or unbalanced props can also contribute.', 
+                action: 'Increase <code class="brand-code-bg brand-text-primary font-mono p-1 rounded">ATC_RATE_R_D</code> and <code class="brand-code-bg brand-text-primary font-mono p-1 rounded">ATC_RATE_P_D</code> slightly (0.001-0.005). Be cautious, as too high D-gain can lead to motor overheating. Consider trying different propellers (e.g., lower pitch) or ensuring they are perfectly balanced.', 
+                data: chartData.propwash 
+            },
+        };
+        
+        const fwSymptomData = {
+            'wingrock': { 
+                title: 'Wing Rock / Porpoising', 
+                desc: 'The drone oscillates in roll (wing rock) or pitch (porpoising) during straight and level fixed-wing cruise. This indicates an over-correction in the fixed-wing attitude control.', 
+                cause: 'Fixed-Wing P-gain (<code class="brand-code-bg brand-text-primary font-mono p-1 rounded">RLL_P</code> or <code class="brand-code-bg brand-text-primary font-mono p-1 rounded">PTCH_P</code>) is too high, causing the drone to overcorrect its attitude. Aerodynamic instability or incorrect control surface throws can also contribute.', 
+                action: 'Reduce <code class="brand-code-bg brand-text-primary font-mono p-1 rounded">RLL_P</code> or <code class="brand-code-bg brand-text-primary font-mono p-1 rounded">PTCH_P</code> in small increments (0.005-0.01). Verify that your control surfaces (ailerons, elevator) are not deflecting too much for a given input, and check wing/tail alignment.', 
+                data: chartData.wingrock 
+            },
+            'fw-sluggish': { 
+                title: 'Sluggish Attitude', 
+                desc: 'The drone feels unresponsive to roll/pitch inputs in fixed-wing mode and struggles to quickly return to a stable attitude after a maneuver. It might feel "loose" or "floaty."', 
+                cause: 'Fixed-Wing P-gain (<code class="brand-code-bg brand-text-primary font-mono p-1 rounded">RLL_P</code> or <code class="brand-code-bg brand-text-primary font-mono p-1 rounded">PTCH_P</code>) is too low, meaning the drone isn\'t applying enough corrective force to maintain its desired attitude.', 
+                action: 'Increase <code class="brand-code-bg brand-text-primary font-mono p-1 rounded">RLL_P</code> or <code class="brand-code-bg brand-text-primary font-mono p-1 rounded">PTCH_P</code> in small increments (0.005-0.01). Also, ensure there is no binding or excessive friction in your control surface linkages.', 
+                data: chartData.fw_sluggish 
+            },
+            'overshoot': { 
+                title: 'Overshoot & Jerkiness', 
+                desc: 'After a rapid correction or stick input, the drone "bounces" past its target angle before settling, resulting in jerky or imprecise flight behavior in fixed-wing mode.', 
+                cause: 'Fixed-Wing D-gain (<code class="brand-code-bg brand-text-primary font-mono p-1 rounded">RLL_D</code> or <code class="brand-code-bg brand-text-primary font-mono p-1 rounded">PTCH_D</code>) is too low, meaning there isn\'t enough damping to prevent the drone from overshooting its target attitude.', 
+                action: 'Increase <code class="brand-code-bg brand-text-primary font-mono p-1 rounded">RLL_D</code> or <code class="brand-code-bg brand-text-primary font-mono p-1 rounded">PTCH_D</code> slightly (0.001-0.005) to dampen corrections and prevent overshoot. Ensure motors are not getting hot after these adjustments.', 
+                data: chartData.overshoot 
+            },
+        };
+
+        function createChart(canvasId, datasets) {
+            const ctx = document.getElementById(canvasId).getContext('2d');
+            const instance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: chartData.labels,
+                    datasets: datasets
+                },
+                options: chartConfigOptions
+            });
+            return instance;
+        }
+        
+        function updateVtolChart(symptom) {
+            const data = vtolSymptomData[symptom];
+            if (!data) return;
+
+            if (vtolChartInstance) {
+                vtolChartInstance.destroy();
+            }
+            vtolChartInstance = createChart('vtolChart', [
+                {
+                    label: 'Ideal Response',
+                    data: chartData.good,
+                    borderColor: '#FF671F', /* TechEagle Orange for Ideal */
+                    backgroundColor: 'rgba(255, 103, 31, 0.1)',
+                    borderWidth: 2,
+                    fill: false,
+                },
+                {
+                    label: 'Observed Symptom',
+                    data: data.data,
+                    borderColor: '#D00000', /* Error Red */
+                    backgroundColor: 'rgba(208, 0, 0, 0.1)',
+                    borderWidth: 2,
+                    borderDash: [5, 5],
+                    fill: false,
+                }
+            ]);
+            
+            vtolInfo.innerHTML = `
+                <h3 class="text-xl font-bold brand-text-primary mb-3">${data.title}</h3>
+                <p class="text-gray-600 mb-4">${data.desc}</p>
+                <div class="brand-bg-highlight/50 border-l-4 brand-border-primary p-4 rounded-r-lg">
+                    <p class="font-semibold text-gray-800">Likely Cause: <span class="font-normal">${data.cause}</span></p>
+                    <p class="mt-2 font-semibold text-gray-800">Recommended Action:</p>
+                    <p class="text-sm">${data.action}</p>
+                </div>
+            `;
+        }
+        
+        function updateFwChart(symptom) {
+            const data = fwSymptomData[symptom];
+            if (!data) return;
+
+            if (fwChartInstance) {
+                fwChartInstance.destroy();
+            }
+            fwChartInstance = createChart('fwChart', [
+                {
+                    label: 'Ideal Flight Path',
+                    data: chartData.good,
+                    borderColor: '#FF671F', /* TechEagle Orange for Ideal */
+                    backgroundColor: 'rgba(255, 103, 31, 0.1)',
+                    borderWidth: 2,
+                    fill: false,
+                },
+                {
+                    label: 'Observed Symptom',
+                    data: data.data,
+                    borderColor: '#D00000', /* Error Red */
+                    backgroundColor: 'rgba(208, 0, 0, 0.1)',
+                    borderWidth: 2,
+                    borderDash: [5, 5],
+                    fill: false,
+                }
+            ]);
+
+            fwInfo.innerHTML = `
+                <h3 class="text-xl font-bold brand-text-primary mb-3">${data.title}</h3>
+                <p class="text-gray-600 mb-4">${data.desc}</p>
+                <div class="brand-bg-highlight/50 border-l-4 brand-border-primary p-4 rounded-r-lg">
+                    <p class="font-semibold text-gray-800">Likely Cause: <span class="font-normal">${data.cause}</span></p>
+                    <p class="mt-2 font-semibold text-gray-800">Recommended Action:</p>
+                    <p class="text-sm">${data.action}</p>
+                </div>
+            `;
+        }
+
+        navButtons.forEach(button => {
+            button.addEventListener('click', () => {
+                const targetId = button.dataset.target;
+
+                navButtons.forEach(btn => btn.classList.remove('active'));
+                button.classList.add('active');
+
+                contentSections.forEach(section => {
+                    if (section.id === targetId) {
+                        section.classList.remove('hidden');
+                    } else {
+                        section.classList.add('hidden');
+                    }
+                });
+            });
+        });
+
+        vtolSymptomButtons.forEach(button => {
+            button.addEventListener('click', () => {
+                vtolSymptomButtons.forEach(btn => btn.classList.remove('active'));
+                button.classList.add('active');
+                updateVtolChart(button.dataset.symptom);
+            });
+        });
+
+        fwSymptomButtons.forEach(button => {
+            button.addEventListener('click', () => {
+                fwSymptomButtons.forEach(btn => btn.classList.remove('active'));
+                button.classList.add('active');
+                updateFwChart(button.dataset.symptom);
+            });
+        });
+
+        function populateTroubleshooting() {
+            const tableBody = document.getElementById('troubleshooting-table');
+            const filter = document.getElementById('issue-filter');
+            tableBody.innerHTML = '';
+            
+            troubleshootingData.forEach(item => {
+                const option = document.createElement('option');
+                option.value = item.issue;
+                option.textContent = item.issue;
+                filter.appendChild(option);
+
+                const row = document.createElement('tr');
+                row.dataset.issue = item.issue;
+                row.innerHTML = `
+                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${item.issue}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${item.cause}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${item.action}</td>
+                `;
+                tableBody.appendChild(row);
+            });
+        }
+        
+        document.getElementById('issue-filter').addEventListener('change', (e) => {
+            const selectedIssue = e.target.value;
+            const rows = document.querySelectorAll('#troubleshooting-table tr');
+            rows.forEach(row => {
+                if (selectedIssue === 'all' || row.dataset.issue === selectedIssue) {
+                    row.style.display = '';
+                } else {
+                    row.style.display = 'none';
+                }
+            });
+        });
+
+        document.addEventListener('DOMContentLoaded', () => {
+            populateTroubleshooting();
+            vtolSymptomButtons[0].click();
+            fwSymptomButtons[0].click();
+        });
+
+    </script>
+</body>
+</html>
